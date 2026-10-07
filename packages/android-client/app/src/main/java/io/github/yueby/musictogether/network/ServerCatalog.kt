@@ -3,7 +3,7 @@ package io.github.yueby.musictogether.network
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class ServerEndpoint(
+data class ServerEndpoint(
     val url: String,
     val preferredHost: String? = null,
 )
