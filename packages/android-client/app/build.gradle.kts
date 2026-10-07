@@ -55,7 +55,9 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.findByName("release")
+            // CI distributes this release variant as a debug-signed artifact.
+            // A production signing key must not be committed to the repository.
+            signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
             isMinifyEnabled = false
         }
