@@ -11,6 +11,7 @@ import io.github.yueby.musictogether.model.ThemeMode
 import io.github.yueby.musictogether.model.UiStyle
 import io.github.yueby.musictogether.model.UpdateDownloadSource
 import io.github.yueby.musictogether.network.ServerCatalog
+import io.github.yueby.musictogether.network.ServerEndpoint
 import io.github.yueby.musictogether.network.normalizeMusicDownloadDirectory
 import org.json.JSONObject
 
@@ -31,14 +32,17 @@ internal data class RoomRejoinCredential(
 internal class AppPreferences(context: Context) {
     private val preferences = context.getSharedPreferences("music_together", Context.MODE_PRIVATE)
 
-    fun initialServerUrls(defaultServerUrl: String): List<String> =
-        ServerCatalog.decode(
+    fun initialServerEndpoints(defaultServerUrl: String, defaultPreferredHost: String? = null): List<ServerEndpoint> =
+        ServerCatalog.decodeEndpoints(
             preferences.getString(SERVERS_KEY, null),
-            preferences.getString(SERVER_URL_KEY, defaultServerUrl).orEmpty().ifBlank { defaultServerUrl },
-        ).ifEmpty { listOf(defaultServerUrl) }
+            ServerEndpoint(
+                preferences.getString(SERVER_URL_KEY, defaultServerUrl).orEmpty().ifBlank { defaultServerUrl },
+                defaultPreferredHost,
+            ),
+        ).ifEmpty { listOf(ServerEndpoint(defaultServerUrl, defaultPreferredHost)) }
 
-    fun persistServers(urls: List<String>) {
-        preferences.edit().putString(SERVERS_KEY, ServerCatalog.encode(urls)).apply()
+    fun persistServers(endpoints: List<ServerEndpoint>) {
+        preferences.edit().putString(SERVERS_KEY, ServerCatalog.encodeEndpoints(endpoints)).apply()
     }
 
     fun selectedServerUrl(defaultServerUrl: String): String =

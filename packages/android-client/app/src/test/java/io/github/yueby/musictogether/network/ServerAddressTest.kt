@@ -25,6 +25,15 @@ class ServerAddressTest {
     }
 
     @Test
+    fun keepsLogicalHttpsHostWhenUsingPreferredIp() {
+        val address = ServerAddress.parse("https://mu.xn--sqs32k.lol", "43.175.131.30:443")!!
+        assertEquals("https://mu.xn--sqs32k.lol", address.displayUrl)
+        assertEquals("43.175.131.30", address.preferredHost)
+        assertEquals("wss://mu.xn--sqs32k.lol/ws", address.webSocketUrl)
+        assertEquals("https://mu.xn--sqs32k.lol/api/health", address.api("health").toString())
+    }
+
+    @Test
     fun rejectsEmptyAddress() {
         assertNull(ServerAddress.parse("  "))
     }

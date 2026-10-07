@@ -52,6 +52,7 @@ import io.github.yueby.musictogether.network.MusicDownloadStorage
 import io.github.yueby.musictogether.network.MusicTogetherApi
 import io.github.yueby.musictogether.network.MusicTogetherSocket
 import io.github.yueby.musictogether.network.PersistentCookieJar
+import io.github.yueby.musictogether.network.PreferredDns
 import io.github.yueby.musictogether.network.PlaybackTarget
 import io.github.yueby.musictogether.network.ReconnectBackoff
 import io.github.yueby.musictogether.network.RoomJoinTargetParser
@@ -123,7 +124,8 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
         const val MAX_QUEUE_SIZE = 1000
         const val MAX_QUEUE_BATCH_SIZE = 200
         val BILIBILI_METADATA_SOURCES = setOf("netease", "tencent", "kugou", "kugou_concept")
-        const val DEFAULT_SERVER_URL = "https://sharemusic.kuro.ltd"
+        const val DEFAULT_SERVER_URL = "https://mu.xn--sqs32k.lol"
+        const val DEFAULT_SERVER_PREFERRED_HOST = "43.175.131.30"
         const val MAX_SERVERS = 10
         const val DEFAULT_SYNC_PACKET_INTERVAL_SECONDS = 3
         const val MIN_SYNC_PACKET_INTERVAL_SECONDS = 1
@@ -143,9 +145,14 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
 
     private val appPreferences = AppPreferences(application)
     private val playbackSyncSettings = appPreferences.loadPlaybackSyncSettings()
-    private val initialServerUrls = appPreferences.initialServerUrls(DEFAULT_SERVER_URL)
+    private val preferredDns = PreferredDns()
+    private val initialServerEndpoints = appPreferences.initialServerEndpoints(
+        DEFAULT_SERVER_URL,
+        DEFAULT_SERVER_PREFERRED_HOST,
+    )
     private val okHttp = OkHttpClient.Builder()
         .cookieJar(PersistentCookieJar(application))
+        .dns(preferredDns)
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
@@ -163,9 +170,10 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
     private val clock = ClockSync()
     private val _state = MutableStateFlow(
         AppState(
-            serverUrl = initialServerUrls.first(),
-            selectedServerUrl = initialServerUrls.first(),
-            servers = initialServerUrls.map { ServerConnection(it) },
+            serverUrl = initialServerEndpoints.first().url,
+            preferredServerHost = initialServerEndpoints.first().preferredHost,
+            selectedServerUrl = initialServerEndpoints.first().url,
+            servers = initialServerEndpoints.map { ServerConnection(it.url, it.preferredHost) },
             nickname = appPreferences.nickname(),
             lyricOffsets = appPreferences.loadLyricOffsets(),
             playbackTempoSyncEnabled = playbackSyncSettings.tempoEnabled,
@@ -235,6 +243,7 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
     private val discovery = DiscoveryConnectionCoordinator(
         okHttp = okHttp,
         api = api,
+        preferredDns = preferredDns,
         scope = viewModelScope,
         activeServer = { activeServer },
         servers = { _state.value.servers },
@@ -292,6 +301,17 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
 
     fun updateServerUrl(value: String) {
         _state.value = _state.value.copy(serverUrl = value)
+    }
+
+    fun updatePreferredServerHost(value: String) {
+        val preferred = value.trim().takeIf { it.isNotBlank() }
+        val current = _state.value
+        _state.value = current.copy(
+            preferredServerHost = preferred,
+            servers = current.servers.map { server ->
+                if (server.url == current.serverUrl) server.copy(preferredHost = preferred) else server
+            },
+        )
     }
 
     fun updateNickname(value: String) {
@@ -566,7 +586,7 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun connect() {
-        val parsed = ServerAddress.parse(_state.value.serverUrl)
+        val parsed = ServerAddress.parse(_state.value.serverUrl, _state.value.preferredServerHost)
         if (parsed == null) {
             setError("请输入有效的服务端 URL")
             return
@@ -576,10 +596,15 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun selectServer(serverUrl: String) {
-        val server = ServerAddress.parse(serverUrl) ?: return setError("服务端地址无效")
+        val stored = _state.value.servers.firstOrNull { it.url == serverUrl }
+        val server = ServerAddress.parse(serverUrl, stored?.preferredHost) ?: return setError("服务端地址无效")
         pendingRoomCreation = null
         if (activeServer?.displayUrl == server.displayUrl && _state.value.connectionStatus == ConnectionStatus.Connected) {
-            _state.value = _state.value.copy(serverUrl = server.displayUrl, selectedServerUrl = server.displayUrl)
+            _state.value = _state.value.copy(
+                serverUrl = server.displayUrl,
+                preferredServerHost = server.preferredHost,
+                selectedServerUrl = server.displayUrl,
+            )
             return
         }
         connectToServer(server, keepDesiredRoom = false)
@@ -590,7 +615,7 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
         val remaining = _state.value.servers.filterNot { it.url == normalized }
         if (remaining.isEmpty()) return setError("至少保留一个服务器")
         discovery.remove(normalized)
-        appPreferences.persistServers(remaining.map(ServerConnection::url))
+        appPreferences.persistServers(remaining.map { io.github.yueby.musictogether.network.ServerEndpoint(it.url, it.preferredHost) })
         _state.value = _state.value.copy(servers = remaining)
         if (activeServer?.displayUrl == normalized) selectServer(remaining.first().url)
     }
@@ -622,6 +647,7 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         if (resetReconnectAttempts) reconnectBackoff.reset()
+        preferredDns.register(parsed)
         AppLogger.info("Connection", "connect server=${parsed.displayUrl}")
         shouldReconnect = true
         reconnectJob?.cancel()
@@ -638,14 +664,19 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
             nativePlayer.stop()
             resetPlatformRoomState()
         }
-        val serverUrls = ServerCatalog.normalize(_state.value.servers.map(ServerConnection::url) + parsed.displayUrl)
-        appPreferences.persistServers(serverUrls)
+        val serverEndpoints = ServerCatalog.normalizeEndpoints(
+            _state.value.servers.map { io.github.yueby.musictogether.network.ServerEndpoint(it.url, it.preferredHost) } +
+                io.github.yueby.musictogether.network.ServerEndpoint(parsed.displayUrl, parsed.preferredHost),
+        )
+        appPreferences.persistServers(serverEndpoints)
+        val serverUrls = serverEndpoints.map { it.url }
         discovery.remove(parsed.displayUrl)
         appPreferences.selectServer(parsed.displayUrl)
         val existingServers = _state.value.servers
         val selectedRooms = existingServers.firstOrNull { it.url == parsed.displayUrl }?.rooms.orEmpty()
         _state.value = _state.value.copy(
             serverUrl = parsed.displayUrl,
+            preferredServerHost = parsed.preferredHost,
             selectedServerUrl = parsed.displayUrl,
             servers = serverUrls.map { url ->
                 existingServers.firstOrNull { it.url == url }
@@ -655,7 +686,10 @@ class MusicTogetherViewModel(application: Application) : AndroidViewModel(applic
                             error = null,
                         )
                     }
-                    ?: ServerConnection(url, if (url == parsed.displayUrl) ConnectionStatus.Connecting else ConnectionStatus.Disconnected)
+                    ?: serverEndpoints.firstOrNull { it.url == url }?.let {
+                        ServerConnection(it.url, it.preferredHost, if (url == parsed.displayUrl) ConnectionStatus.Connecting else ConnectionStatus.Disconnected)
+                    }
+                    ?: ServerConnection(url, status = if (url == parsed.displayUrl) ConnectionStatus.Connecting else ConnectionStatus.Disconnected)
             },
             connectionStatus = ConnectionStatus.Connecting,
             rooms = selectedRooms,

@@ -18,6 +18,7 @@ import org.json.JSONObject
 internal class DiscoveryConnectionCoordinator(
     private val okHttp: OkHttpClient,
     private val api: MusicTogetherApi,
+    private val preferredDns: PreferredDns,
     private val scope: CoroutineScope,
     private val activeServer: () -> ServerAddress?,
     private val servers: () -> List<ServerConnection>,
@@ -33,7 +34,8 @@ internal class DiscoveryConnectionCoordinator(
         (sockets.keys - wanted).forEach(::remove)
         wanted.forEach { url ->
             if (url !in sockets && url !in starting) {
-                ServerAddress.parse(url)?.let(::connect)
+                val preferred = servers().firstOrNull { it.url == url }?.preferredHost
+                ServerAddress.parse(url, preferred)?.let(::connect)
             }
         }
     }
@@ -58,6 +60,7 @@ internal class DiscoveryConnectionCoordinator(
 
     private fun connect(server: ServerAddress) {
         val url = server.displayUrl
+        preferredDns.register(server)
         if (url == activeServer()?.displayUrl || url in starting || url in sockets) return
         starting += url
         updateServer(url) { it.copy(status = ConnectionStatus.Connecting, error = null) }
@@ -95,7 +98,8 @@ internal class DiscoveryConnectionCoordinator(
         reconnectJobs[url] = scope.launch {
             delay(3_000)
             sockets.remove(url)?.disconnect()
-            ServerAddress.parse(url)?.let(::connect)
+            val preferred = servers().firstOrNull { it.url == url }?.preferredHost
+            ServerAddress.parse(url, preferred)?.let(::connect)
         }
     }
 

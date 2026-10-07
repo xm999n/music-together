@@ -105,6 +105,12 @@ private fun ConnectionEditor(state: AppState, viewModel: MusicTogetherViewModel)
                 label = "服务器 URL，例如 https://music.example.com",
             )
             AppTextField(
+                value = state.preferredServerHost.orEmpty(),
+                onValueChange = viewModel::updatePreferredServerHost,
+                modifier = Modifier.fillMaxWidth(),
+                label = "优选 IP 或域名（当前默认 43.175.131.30）",
+            )
+            AppTextField(
                 value = state.nickname,
                 onValueChange = viewModel::updateNickname,
                 modifier = Modifier.fillMaxWidth(),
@@ -196,6 +202,15 @@ private fun ConnectionStatusText(server: ServerConnection, selected: Boolean, mo
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                server.preferredHost?.let { preferred ->
+                    Text(
+                        "连接地址：$preferred（请求主机仍为域名）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     summary,
                     style = MaterialTheme.typography.labelSmall,
@@ -211,6 +226,15 @@ private fun ConnectionStatusText(server: ServerConnection, selected: Boolean, mo
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                server.preferredHost?.let { preferred ->
+                    MiuixText(
+                        "连接地址：$preferred（请求主机仍为域名）",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 MiuixText(
                     summary,
                     style = MiuixTheme.textStyles.footnote1,

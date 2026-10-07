@@ -28,4 +28,14 @@ class ServerCatalogTest {
 
         assertEquals(urls, ServerCatalog.decode(ServerCatalog.encode(urls), urls.first()))
     }
+
+    @Test
+    fun encodedEndpointCatalogKeepsPreferredHost() {
+        val endpoints = listOf(ServerEndpoint("https://mu.xn--sqs32k.lol", "43.175.131.30"))
+
+        assertEquals(
+            endpoints,
+            ServerCatalog.decodeEndpoints(ServerCatalog.encodeEndpoints(endpoints), endpoints.first()),
+        )
+    }
 }

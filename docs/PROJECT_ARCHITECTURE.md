@@ -33,7 +33,7 @@ Android 客户端包含以下主要能力：
 | 构建 | Gradle 9.5.0，Android Gradle Plugin 9.3.1 |
 | Android | `minSdk 26`，`targetSdk 36`，`compileSdk 37` |
 | 用户界面 | Jetpack Compose，Material 3，MIUIX 0.9.3 |
-| 网络 | OkHttp 4.12，HTTP API，原生 WebSocket |
+| 网络 | OkHttp 4.12，HTTP API，原生 WebSocket；支持保留逻辑域名的优选 IP / 域名 DNS 解析 |
 | 播放 | Media3 ExoPlayer，MediaSessionService |
 | 图片与取色 | Coil 3，AndroidX Palette |
 | 状态 | Kotlin Flow，Compose State |
@@ -98,7 +98,7 @@ io/github/yueby/musictogether/
 | `MusicTogetherViewModel.kt` | 应用状态、主 WebSocket 事件和业务模块编排 |
 | `account/` | 身份资料、头像、密码和管理员操作流程 |
 | `model/` | 房间、曲目、歌词、账号和界面状态 |
-| `network/` | 服务端连接、协议转换和多服务器房间发现 |
+| `network/` | 服务端连接、协议转换、多服务器房间发现，以及保留 HTTPS 主机名的优选地址解析 |
 | `player/` | 后台播放、系统媒体控制和同步 |
 | `queue/` | 点歌操作的乐观占用、去重和服务端确认 |
 | `settings/` | 应用本地设置、房间重进凭据和平台凭据 |
@@ -189,6 +189,8 @@ MIUIX 设置二级页使用 MIUIX `Scaffold` 与 `SmallTopAppBar` 消费状态�
 - 反向代理：保留地址中已有的基础路径
 
 `ServerCatalog.kt` 保存多个服务端地址。大厅为每个服务端建立 discovery socket，并将房间列表合并到统一界面。
+
+服务器设置还支持为每个逻辑服务端配置优选 IP 或域名。`PreferredDns` 只改变底层 DNS 解析目标，API 和 WebSocket 的 URL、HTTP Host、TLS SNI 与证书校验仍使用逻辑服务端域名，因此适用于 Cloudflare CDN 的优选 IP 连接。旧版仅保存 URL 的服务器目录会自动兼容读取。
 
 主服务端连接失败后最多自动重试 5 次，间隔依次为 2、4、8、15 和 30 秒。用户主动连接、切换服务端或连接成功时重置计数；达到阈值后停止后台重试，由用户在连接设置中手动发起新连接。
 

@@ -275,6 +275,7 @@ data class RoomListItem(
 @Immutable
 data class ServerConnection(
     val url: String,
+    val preferredHost: String? = null,
     val status: ConnectionStatus = ConnectionStatus.Disconnected,
     val rooms: List<RoomListItem> = emptyList(),
     val error: String? = null,
@@ -479,6 +480,7 @@ enum class ConnectionStatus {
 @Immutable
 data class AppState(
     val serverUrl: String = "http://10.0.2.2:3001",
+    val preferredServerHost: String? = null,
     val selectedServerUrl: String = serverUrl,
     val servers: List<ServerConnection> = emptyList(),
     val nickname: String = "",
